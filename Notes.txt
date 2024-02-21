@@ -1,0 +1,116 @@
+1.1 Bounding Box:
+	- construct bounding box the same time in each object's construction
+	- construction includes three types:
+		- two-point construction:        for user determined
+		- three-interval construction:  for sphere likewise objects that utilize three "slabs" concept.
+		- two-aabb construction:        for tree construction and moving object's construction ( convert two box into two of three slabs, and get union of them)
+	- intersection method: Andrew Kensler (at Pixar) version
+
+1.2 BVH:
+	1. intersect
+		- recursively intersection detection
+		- owing that `BVH node` is sub-class of `object`, so when calling `intersect` function, if the current pointer pointing to a bvh node, then it will recursively testing downward. But if the current pointer points to a object, which is the leaf node, then it will test intersection and return value. So there is no need for two intersection function for bounding box intersection and object intersection respectively ! (Not like GAMES101's framework)
+
+
+	2. Build BVH in ray tracing the next week: not a balanced tree though correct
+		- check the length of current objects list
+			- if one or two objects left, then put it/them in the final two leaf nodes.
+			- or
+			- randomly choose an axis 
+				- sort the primitives 
+				- let each half of them recursively build new BVH
+
+2 caveats:
+	- t1 and t2, which is larger? This is determined by the ray direction. So t_interval like (7, 3) is also possible when the ray is pointing backward along an axis.
+	- division issue 
+		- it might give us infinities (but whethter is +infinity or -infinity is ok for min/max compararison) 
+		- `NaN` if the ray's origin is on one of the slab boundaries. The hitting result is upon user.
+	- floating point issues when using IEEE type.
+	- vectorization issues.
+
+
+3. ray-quad intersection:
+	- plane formula:	   test ray-plane intersection
+	- coordinate formula:   test if hitting point is inside or outside of quad
+		- the way we test inside/outside is similar to triangle's one.
+		- we use two edges of the quad to orient any point on the plane.
+		- In form of (P = Q + alpha * u + beta * v)_ compaing to triangle's form (P = (1 - beta - gamma) * a + beta * b + gamma * c);
+		- test if alpha, beta is in interval of [0, 1] compaing to triangle's requirement of alpha, beta, gamma in interval of [0, 1]
+
+
+4.1 Monte Carlo Method:
+	- Intuition of the this method: estimating Pi, we randomly pick a point in the area of a square including a circle, and the circle area is equal to the fraction of points landing inside the circle.
+	- Caveats: if we simple randomly pick a point, We get very quickly near π, and then more slowly zero in on it. This is an example of the Law of Diminishing Returns, where each sample helps less than the last. This is the worst part of Monte Carlo. 
+	- Solution of caveats: we can mitigate this diminishing return by stratifying the samples (often called jittering), where instead of taking random samples, we take a grid and take one sample within each. Unfortunately, this advantage decreases with the dimension of the problem (so for example, with the 3D sphere volume version the gap would be less). This is called the Curse of Dimensionality.
+
+
+4.1 discrete function -> discrete density function: 
+	- discrete function: a bin with actual height/value/frequency.
+	- discrete density function: a bin but normalized into fraction of total instead of actual value.
+
+4.2 discrete density function -> continuous density function
+	- changing our discrete value into continuous value.
+
+4.3 PDF (non-uniform) random number generator:
+	- generates random number with a probability defined by a PDF, but our computer can only generates uniform random number.
+	- Analytical method: evaluate integral of the PDF function within an integral to get the area under the curve equaling to 1, then we might get the target PDF function (within an interval). So we can random pick up a value through this analytical solution.
+	- Experimental method, when we encounter a PDF that is unable to integral, we will have to use experimental method to get the PDF within the target interval. 
+	- Experimental method: divide and conquer.
+```c++
+#include "rtweekend.h"
+#include <algorithm>
+#include <vector>
+#include <iostream>
+#include <iomanip>
+#include <math.h>
+#include <cmath>
+#include <stdlib.h>
+
+struct sample {
+    double x;
+    double p_x;
+};
+
+bool compare_by_x(const sample& a, const sample& b) {
+    return a.x < b.x;
+}
+
+int main() {
+    int N = 10000;
+    double sum = 0.0;
+
+    // iterate through all of our samples
+    std::vector<sample> samples;
+    for (int i = 0; i < N; i++) {
+        // Get the area under the curve
+        auto x = random_double(0, 2*pi);
+        auto sin_x = sin(x);
+        auto p_x = exp(-x / (2*pi)) * sin_x * sin_x;
+        sum += p_x;
+        // store this sample
+        sample this_sample = {x, p_x};
+        samples.push_back(this_sample);
+    }
+
+    // Sort the samples by x
+    std::sort(samples.begin(), samples.end(), compare_by_x);
+
+    // Find out the sample at which we have half of our area
+    double half_sum = sum / 2.0;
+    double halfway_point = 0.0;
+    double accum = 0.0;
+    for (int i = 0; i < N; i++){
+        accum += samples[i].p_x;
+        if (accum >= half_sum){
+            halfway_point = samples[i].x;
+            break;
+        }
+    }
+
+    std::cout << std::fixed << std::setprecision(12);
+    std::cout << "Average = " << sum / N << '\n';
+    std::cout << "Area under curve = " << 2 * pi * sum / N << '\n';
+    std::cout << "Halfway = " << halfway_point << '\n';
+}
+```c++
+	- The Probability Density Function (PDF) is the probability function that explains how likely an interval of numbers is to be chosen. The Cumulative Distribution Function (CDF) is the distribution function that explains how likely all numbers smaller than its input is to be chosen. To go from the PDF to the CDF, you need to integrate from −∞ to x, but to go from the CDF to the PDF, all you need to do is take the derivative.
